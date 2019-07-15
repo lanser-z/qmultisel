@@ -1,4 +1,5 @@
 # qmultisel
+![screen shot](https://raw.githubusercontent.com/lanser-z/qmultisel/master/screenshot.png)
 ## 一个Qt控件，用来在多行之间选择范围。使用场景如：多媒体编辑器
 * 基于QTableView实现
 * 提供时间轴指针
