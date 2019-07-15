@@ -17,6 +17,8 @@ public:
     void SetSelectionMode(bool selectToAdd);
     void ResetSelection();
 
+    void AddCellData(int row, int col, const QImage& data);
+
     QVector<QVector<TimeRange> > GetSelectionTimes() const;
     QVector<RowTimeRange> GetRowTimes() const;
 
@@ -26,8 +28,8 @@ private:
     virtual void mouseMoveEvent(QMouseEvent *event);
     virtual void mouseReleaseEvent(QMouseEvent *event);
     virtual void leaveEvent(QEvent *event);
-
     void ProcessNewSelection();
+    void EndGrab();
 
 private:
     QVector<QVector<PixelRange> > m_selections;
@@ -47,22 +49,22 @@ private:
     class Cursor : public QWidget
     {
     public:
-        explicit Cursor(QWidget* parent, int xOffset, int yOffset);
+        explicit Cursor(QWidget* parent);
         virtual ~Cursor();
 
-        void CenterOn(int xPos);
+        void CenterOn(int xPos, int xOffset);
         void SetLabelMap(int xRange, int totalSeconds);
 
     private:
         virtual void paintEvent(QPaintEvent* event);
 
     private:
-        int m_xOffset;
-        int m_yOffset;
         int m_xRange;
         int m_totalSeconds;
+        int m_xOffset;
     };
     Cursor* m_cursorPtr;
+
 };
 
 #endif // RANGETABLE_H

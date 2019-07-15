@@ -25,7 +25,7 @@ void MainWindow::SetupLayout()
     // 设置时间轴
     QStringList timeline;
     timeline << "00:00" << "01:00" << "02:00" << "03:00" << "04:00" << "05:00" << "06:00" << "07:00" << "08:00" << "09:00" << "10:00";
-    timeline << "10:00" << "11:00" << "12:00" << "13:00" << "14:00" << "15:00" << "16:00" << "17:00" << "18:00" << "19:00" << "20:00";
+    timeline << "11:00" << "12:00" << "13:00" << "14:00" << "15:00" << "16:00" << "17:00" << "18:00" << "19:00" << "20:00";
     m_rangeTable.SetHeader(timeline, 100); // 每列宽100
 
     // 设置视频名
@@ -35,6 +35,10 @@ void MainWindow::SetupLayout()
 
     // 创建布局并映射到时间范围
     m_rangeTable.SetupLayout(timeline.size()*60); // 每列1min
+
+    // 添加表格数据
+    m_rangeTable.AddCellData(0, 0, QImage(":/demo/1x1.png"));
+    m_rangeTable.AddCellData(1, 1, QImage(":/demo/2x2.png"));
 
     setCentralWidget(&m_rangeTable);
 }

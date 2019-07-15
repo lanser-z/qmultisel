@@ -4,6 +4,7 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QStyledItemDelegate>
+#include <QScrollBar>
 #include <stdlib.h>
 #include <QDebug>
 
@@ -27,13 +28,13 @@ private:
         if (logicalIndex >= 0 && logicalIndex < m_texts.size())
         {
             painter->drawText(rect, m_align|Qt::AlignTop, m_texts[logicalIndex]);
-            painter->drawLine(logicalIndex*m_width, height()/2, logicalIndex*m_width, height());
+            painter->drawLine(rect.left(), height()/2, rect.left(), height());
 
             int section = 6;
             for (int i = 1; i < section; ++i)
             {
-                painter->drawLine(logicalIndex*m_width + i*m_width/section, height()-2,
-                                  logicalIndex*m_width + i*m_width/section, height());
+                painter->drawLine(rect.left() + i*m_width/section, height()-2,
+                                  rect.left() + i*m_width/section, height());
             }
 
         }
@@ -184,6 +185,11 @@ public:
 private:
     virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
     {
+        if (index.row() < 0 || index.column() < 0)
+        {
+            return;
+        }
+
         QImage image = index.data(Qt::DisplayRole).value<QImage>();
         if (!image.isNull())
         {
@@ -196,6 +202,12 @@ private:
         PixelRange cellRange;
         cellRange.start = option.rect.left();
         cellRange.end = option.rect.right();
+        const QTableView* viewPtr = dynamic_cast<const QTableView*>(option.widget);
+        if (viewPtr)
+        {
+            cellRange.start -= viewPtr->columnViewportPosition(0);
+            cellRange.end -= viewPtr->columnViewportPosition(0);
+        }
         for (int i = 0; i < rowSelections.size(); ++i)
         {
             PixelRange intersection = cellRange.Intersection(rowSelections[i]);
@@ -204,6 +216,10 @@ private:
                 QRect intersectionRect = option.rect;
                 intersectionRect.setLeft(intersection.start);
                 intersectionRect.setRight(intersection.end);
+                if (viewPtr)
+                {
+                    intersectionRect.moveLeft(intersectionRect.left()+viewPtr->columnViewportPosition(0));
+                }
                 painter->fillRect(intersectionRect, QBrush(QColor(0, 0, 255, 128)));
             }
         }
@@ -267,6 +283,7 @@ void RangeTable::SetupLayout(int timeSpanSeconds)
 
     setCornerButtonEnabled(false);
     setShowGrid(false);
+    viewport()->setMouseTracking(true);
 
     setColumnWidth(0, m_rowHeadWidth);
     for (int i = 1; i <= m_headTexts.size(); ++i)
@@ -278,9 +295,9 @@ void RangeTable::SetupLayout(int timeSpanSeconds)
     }
 
     delete m_cursorPtr;
-    m_cursorPtr = new Cursor(this, m_rowHeadWidth, horizontalHeader()->height());
+    m_cursorPtr = new Cursor(viewport());
     m_cursorPtr->setFixedWidth(m_columnWidth);
-    m_cursorPtr->CenterOn(0);
+    m_cursorPtr->CenterOn(0, 0);
     m_cursorPtr->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_cursorPtr->show();
 
@@ -301,6 +318,15 @@ void RangeTable::ResetSelection()
     for (int i = 0; i < model()->rowCount(); ++i)
     {
         m_selections.push_back(QVector<PixelRange>());
+    }
+}
+
+void RangeTable::AddCellData(int row, int col, const QImage &data)
+{
+    RangeTableModel* modelPtr = dynamic_cast<RangeTableModel*>(model());
+    if (modelPtr)
+    {
+        modelPtr->AddCellData(row, col, data);
     }
 }
 
@@ -342,8 +368,7 @@ QVector<RowTimeRange> RangeTable::GetRowTimes() const
             rowRangeList.push_back(timeRange);
         }
     }
-    qSort(rowRangeList.begin(),rowRangeList.end(),
-          [](const RowTimeRange &lhs, const RowTimeRange &rhs){return lhs.begin < rhs.begin;});
+    qSort(rowRangeList.begin(),rowRangeList.end(), [](const RowTimeRange &lhs, const RowTimeRange &rhs){return lhs.begin < rhs.begin;});
     return rowRangeList.toVector();
 }
 
@@ -359,10 +384,9 @@ void RangeTable::mousePressEvent(QMouseEvent *event)
     QTableView::mousePressEvent(event);
     if (event->x() >= 0 && event->x() < m_columnWidth*m_headTexts.size())
     {
-        m_cursorPtr->CenterOn(event->x());
         int row = indexAt(event->pos()).row();
         m_newSelection.row = row;
-        m_newSelection.start = event->pos().x();
+        m_newSelection.start = event->x() - columnViewportPosition(0);
         m_grabNow = true;
     }
 }
@@ -374,32 +398,32 @@ void RangeTable::mouseMoveEvent(QMouseEvent *event)
     {
         if (event->x() >= 0 && event->x() < m_columnWidth*m_headTexts.size())
         {
-            m_cursorPtr->CenterOn(event->x());
-            m_newSelection.end = event->pos().x();
+            m_newSelection.end = event->x() - columnViewportPosition(0);
         }
     }
+    m_cursorPtr->CenterOn(event->x(), columnViewportPosition(0));
+}
+
+void RangeTable::EndGrab()
+{
+    if (m_grabNow && m_newSelection.IsValid())
+    {
+        ProcessNewSelection();
+        m_newSelection.Reset();
+    }
+    m_grabNow = false;
 }
 
 void RangeTable::mouseReleaseEvent(QMouseEvent *event)
 {
     QTableView::mouseReleaseEvent(event);
-    if (m_grabNow)
-    {
-        ProcessNewSelection();
-        m_newSelection.Reset();
-    }
-    m_grabNow = false;
+    EndGrab();
 }
 
 void RangeTable::leaveEvent(QEvent *event)
 {
     QTableView::leaveEvent(event);
-    if (m_grabNow)
-    {
-        ProcessNewSelection();
-        m_newSelection.Reset();
-    }
-    m_grabNow = false;
+    EndGrab();
 }
 
 void RangeTable::ProcessNewSelection()
@@ -603,12 +627,11 @@ void RangeTable::ProcessNewSelection()
     dataChanged(model()->index(m_newSelection.row, 0), model()->index(m_newSelection.row, m_headTexts.size()-1));
 }
 
-RangeTable::Cursor::Cursor(QWidget *parent, int xOffset, int yOffset)
+RangeTable::Cursor::Cursor(QWidget *parent)
     : QWidget(parent)
-    , m_xOffset(xOffset)
-    , m_yOffset(yOffset)
     , m_xRange(0)
     , m_totalSeconds(0)
+    , m_xOffset(0)
 {
 
 }
@@ -618,9 +641,10 @@ RangeTable::Cursor::~Cursor()
 
 }
 
-void RangeTable::Cursor::CenterOn(int xPos)
+void RangeTable::Cursor::CenterOn(int xPos, int xOffset)
 {
-    move(m_xOffset + xPos - width()/2, m_yOffset);
+    m_xOffset = xOffset;
+    move(xPos - width()/2, 0);
 }
 
 void RangeTable::Cursor::SetLabelMap(int xRange, int totalSeconds)
@@ -637,7 +661,7 @@ void RangeTable::Cursor::paintEvent(QPaintEvent *event)
                      QBrush(QColor(255, 0, 0, 100)));
     if (m_xRange > 0 && m_totalSeconds > 0)
     {
-        int currentSeconds = (pos().x()+width()/2 - m_xOffset) * m_totalSeconds / m_xRange;
+        int currentSeconds = (x()+width()/2 - m_xOffset) * m_totalSeconds / m_xRange;
         QString time;
         time.sprintf("%02d:%02d", currentSeconds/60, currentSeconds%60);
         painter.drawText(rect(), Qt::AlignTop|Qt::AlignHCenter, time);
